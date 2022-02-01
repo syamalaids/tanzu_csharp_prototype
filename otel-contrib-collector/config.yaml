@@ -1,0 +1,41 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+  zipkin:
+
+exporters:
+  logging:
+    logLevel: debug
+    
+  # Data sources: traces, metrics, logs
+  file:
+    path: ./collector.json
+    
+  tanzuobservability:
+    traces:
+    #hostname and  'customeTracingListenerPorts' of the Wavefront Proxy
+       endpoint: "http://dev-proxy-temp.cyracomdev.com:30001"
+       
+  jaeger_thrift:
+    endpoint: "http://jaeger:14268/api/traces"
+    
+  zipkin:
+    endpoint: "http://zipkin:9411/api/v2/spans"
+
+processors:
+  batch:
+
+extensions:
+  health_check:
+  pprof:
+  zpages:
+
+service:
+  extensions: []
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [logging, tanzuobservability]
+      processors: [batch]
