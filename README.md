@@ -1,1 +1,1 @@
-# tanzu_csharp_prototype
+C# opentelemetry and Tanzu POC
