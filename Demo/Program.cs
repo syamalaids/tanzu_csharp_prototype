@@ -4,17 +4,22 @@ using OpenTelemetry.Exporter;
 using OpenTelemetry.Instrumentation.Http;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using OpenTelemetry.Metrics;
+using System.Diagnostics.Metrics;
 using System;
 using System.Diagnostics;
+using System.Collections.Generic;
 
 namespace Demo
 {
     public class Program
     {
+        private const string MeterLibName = "Cyracom.CSharpPOC";
         private const string ServiceName = "CsharpPOC";
         private const string ServiceVersion = "1.0.0";
         public static readonly ActivitySource MyActivitySource = new ActivitySource(ServiceName, ServiceVersion);
 
+        private static readonly Meter MyMeter = new Meter(MeterLibName, "1.0");
 
         static void SetupActivityListener()
         {
@@ -30,7 +35,45 @@ namespace Demo
 
         static void Main(string[] args)
         {
+            //GenerateMetrics();
+            GenerateTraces();
 
+            Console.WriteLine("Press something to exit the program");
+            Console.ReadLine();
+        }
+
+        private static void GenerateMetrics()
+        {
+#if OTLPExporter
+            var meterProvider = Sdk.CreateMeterProviderBuilder()
+                                    .AddMeter(MeterLibName)
+                                    .AddOtlpExporter(SetExporterOptions)
+                                    .Build();
+#else
+            var meterProvider = Sdk.CreateMeterProviderBuilder()
+                                    .AddMeter(MeterLibName)
+                                    .AddConsoleExporter()
+                                    .Build();
+
+#endif
+            SetupActivityListener();
+            var counterExceptions = MyMeter.CreateCounter<long>("exceptions", null, "number of exceptions caught");
+
+            var exceptionTypeparam = new KeyValuePair<string, object>("exception_type", "FileLoadException");
+            var handledParam = new KeyValuePair<string, object>("handled_by_user", true);
+
+            counterExceptions.Add(30, exceptionTypeparam, handledParam);
+            /*
+            MyFruitCounter.Add(1, new ("name", "apple"), new ("color", "red"));
+            MyFruitCounter.Add(2, new ("name", "lemon"), new ("color", "yellow"));
+            MyFruitCounter.Add(1, new ("name", "lemon"), new ("color", "yellow"));
+            MyFruitCounter.Add(2, new ("name", "apple"), new ("color", "green"));
+            MyFruitCounter.Add(5, new ("name", "apple"), new ("color", "red"));
+            MyFruitCounter.Add(4, new ("name", "lemon"), new ("color", "yellow")); */
+        }
+
+        private static void GenerateTraces()
+        {
 #if OTLPExporter
             TracerProvider tracerProvider = Sdk.CreateTracerProviderBuilder()
                                     .AddSource(ServiceName)
@@ -63,9 +106,6 @@ namespace Demo
             {
                 HttpCaller.Start(100000);
             }
-
-            Console.WriteLine("Press something to exit the program");
-            Console.ReadLine();
         }
 
         private static void SetExporterOptions(OtlpExporterOptions options)

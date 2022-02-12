@@ -2,8 +2,6 @@ receivers:
   otlp:
     protocols:
       grpc:
-      http:
-  zipkin:
 
 exporters:
   logging:
@@ -18,11 +16,6 @@ exporters:
     #hostname and  'customeTracingListenerPorts' of the Wavefront Proxy
        endpoint: "http://dev-proxy-temp.cyracomdev.com:30001"
        
-  jaeger_thrift:
-    endpoint: "http://jaeger:14268/api/traces"
-    
-  zipkin:
-    endpoint: "http://zipkin:9411/api/v2/spans"
 
 processors:
   batch:
