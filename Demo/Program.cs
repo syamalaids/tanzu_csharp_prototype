@@ -9,11 +9,21 @@ using System.Diagnostics.Metrics;
 using System;
 using System.Diagnostics;
 using System.Collections.Generic;
+using App.Metrics;
+using Wavefront.SDK.CSharp.Proxy;
+using Wavefront.SDK.CSharp.Common;
+using App.Metrics.Reporting.Wavefront.Builder;
+using Wavefront.SDK.CSharp.Common.Application;
+using App.Metrics.Scheduling;
+using System.Threading.Tasks;
+using App.Metrics.Counter;
 
 namespace Demo
 {
     public class Program
     {
+        private const string ProxyHostName = "dev-proxy-temp.cyracomdev.com";
+        private const string ApplicationName = "Platform Services";
         private const string MeterLibName = "Cyracom.CSharpPOC";
         private const string ServiceName = "CsharpPOC";
         private const string ServiceVersion = "1.0.0";
@@ -36,10 +46,59 @@ namespace Demo
         static void Main(string[] args)
         {
             //GenerateMetrics();
+            GenerateMetricsToWavefront();
             GenerateTraces();
 
             Console.WriteLine("Press something to exit the program");
             Console.ReadLine();
+        }
+
+        private static void GenerateMetricsToWavefront()
+        {
+            // Create a builder instance for App Metrics
+            var metricsBuilder = new MetricsBuilder();
+
+            // Create the builder with the proxy hostname or address
+            WavefrontProxyClient.Builder wfProxyClientBuilder = new WavefrontProxyClient.Builder(ProxyHostName);
+
+            // Set the proxy port to send metrics to. Default: 2878
+            wfProxyClientBuilder.MetricsPort(2878);
+
+            // Create the WavefrontProxyClient
+            IWavefrontSender wavefrontSender = wfProxyClientBuilder.Build();
+
+            var appTags  = new ApplicationTags.Builder(ApplicationName, ServiceName);
+            // Configure the builder instance to report to Wavefront
+            metricsBuilder.Report.ToWavefront(
+              options =>
+              {
+                  options.WavefrontSender = wavefrontSender; // pseudocode; see above
+                  options.Source = "Cyracom.CSharpPOC"; // optional
+                  options.ApplicationTags = appTags.Build();
+                  options.WavefrontHistogram.ReportMinuteDistribution = true; // optional
+              });
+
+            var metrics = metricsBuilder.Build();
+
+            var scheduler = new AppMetricsTaskScheduler(
+                              TimeSpan.FromSeconds(10),
+                              async () =>
+                              {
+                                  await Task.WhenAll(metrics.ReportRunner.RunAllAsync());
+                              });
+            scheduler.Start();
+
+            // Configure and instantiate a DeltaCounter using DeltaCounterOptions.Builder.
+            var myDeltaCounter = new DeltaCounterOptions.Builder("myDeltaCounter")
+                                      .MeasurementUnit(Unit.Calls)
+                                      .Tags(new MetricTags("cluster", "us-west"))
+                                      .Build();
+
+            // Increment the counter by 1
+            metrics.Measure.Counter.Increment(myDeltaCounter);
+
+            // Increment the counter by n
+            metrics.Measure.Counter.Increment(myDeltaCounter, 10);
         }
 
         private static void GenerateMetrics()
