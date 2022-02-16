@@ -28,10 +28,19 @@ namespace Demo
         private const string ServiceName = "CsharpPOC";
         private const string ServiceVersion = "1.0.0";
         public static readonly ActivitySource MyActivitySource = new ActivitySource(ServiceName, ServiceVersion);
+        public static DeltaCounterOptions MyExceptionCounter;
+        public static IMetricsRoot WfMetrics;
 
-        private static readonly Meter MyMeter = new Meter(MeterLibName, "1.0");
+        static void Main(string[] args)
+        {
+            //GenerateMetrics();
+            GenerateTraces();
 
-        static void SetupActivityListener()
+            Console.WriteLine("Press something to exit the program");
+            Console.ReadLine();
+        }
+
+        private static void SetupActivityListener()
         {
             ActivityListener activityListener = new ActivityListener
             {
@@ -43,17 +52,7 @@ namespace Demo
             ActivitySource.AddActivityListener(activityListener);
         }
 
-        static void Main(string[] args)
-        {
-            //GenerateMetrics();
-            GenerateMetricsToWavefront();
-            GenerateTraces();
-
-            Console.WriteLine("Press something to exit the program");
-            Console.ReadLine();
-        }
-
-        private static void GenerateMetricsToWavefront()
+        private static void SetupWavefrontMetrics()
         {
             // Create a builder instance for App Metrics
             var metricsBuilder = new MetricsBuilder();
@@ -67,42 +66,46 @@ namespace Demo
             // Create the WavefrontProxyClient
             IWavefrontSender wavefrontSender = wfProxyClientBuilder.Build();
 
-            var appTags  = new ApplicationTags.Builder(ApplicationName, ServiceName);
+            var appTags  = new ApplicationTags.Builder(ApplicationName, ServiceName).Build();
+            
             // Configure the builder instance to report to Wavefront
             metricsBuilder.Report.ToWavefront(
-              options =>
-              {
-                  options.WavefrontSender = wavefrontSender; // pseudocode; see above
-                  options.Source = "Cyracom.CSharpPOC"; // optional
-                  options.ApplicationTags = appTags.Build();
-                  options.WavefrontHistogram.ReportMinuteDistribution = true; // optional
-              });
+                          options =>
+                          {
+                              options.WavefrontSender = wavefrontSender; // pseudocode; see above
+                              options.Source = "Cyracom.CSharpPOC"; // optional
+                              options.ApplicationTags = appTags;
+                              options.WavefrontHistogram.ReportMinuteDistribution = true; // optional
+                          });
 
-            var metrics = metricsBuilder.Build();
+            WfMetrics = metricsBuilder.Build();
+            WfMetrics.Options.AddAppTag(ApplicationName);
+            WfMetrics.Options.AddServerTag("devisd006");
+            WfMetrics.Options.DefaultContextLabel = ApplicationName;
 
             var scheduler = new AppMetricsTaskScheduler(
                               TimeSpan.FromSeconds(10),
                               async () =>
                               {
-                                  await Task.WhenAll(metrics.ReportRunner.RunAllAsync());
+                                  await Task.WhenAll(WfMetrics.ReportRunner.RunAllAsync());
                               });
             scheduler.Start();
 
             // Configure and instantiate a DeltaCounter using DeltaCounterOptions.Builder.
-            var myDeltaCounter = new DeltaCounterOptions.Builder("myDeltaCounter")
-                                      .MeasurementUnit(Unit.Calls)
-                                      .Tags(new MetricTags("cluster", "us-west"))
+            MyExceptionCounter = new DeltaCounterOptions.Builder("myExceptionCounter")
+                                      .MeasurementUnit(Unit.Errors)
+                                      .Tags(new MetricTags("app", ApplicationName))
                                       .Build();
 
-            // Increment the counter by 1
-            metrics.Measure.Counter.Increment(myDeltaCounter);
 
             // Increment the counter by n
-            metrics.Measure.Counter.Increment(myDeltaCounter, 10);
+            //metrics.Measure.Counter.Increment(MyExceptionCounter, 13);
         }
 
+#if OTLPMetric
         private static void GenerateMetrics()
         {
+            Meter MyMeter = new Meter(MeterLibName, "1.0");
 #if OTLPExporter
             var meterProvider = Sdk.CreateMeterProviderBuilder()
                                     .AddMeter(MeterLibName)
@@ -130,7 +133,8 @@ namespace Demo
             MyFruitCounter.Add(5, new ("name", "apple"), new ("color", "red"));
             MyFruitCounter.Add(4, new ("name", "lemon"), new ("color", "yellow")); */
         }
-
+        
+#endif
         private static void GenerateTraces()
         {
 #if OTLPExporter
@@ -153,6 +157,7 @@ namespace Demo
                                     .Build();
 #endif
             SetupActivityListener();
+            SetupWavefrontMetrics();
 
             // string proxyHost = "wavefront.proxy.hostname";
             // int metricsPort = 2878;
@@ -167,13 +172,6 @@ namespace Demo
             }
         }
 
-        private static void SetExporterOptions(OtlpExporterOptions options)
-        {
-            // if running collector on the same box as CFE Endpoint below should be local host
-            // The default value of endpoint is http://localhost:4317.
-            //options.Endpoint = new Uri("http://0.0.0.0:4318");
-            options.Protocol = OtlpExportProtocol.Grpc;
-        }
 
         private static void ActivityTest(int iterCount)
         {
@@ -190,6 +188,14 @@ namespace Demo
                     }
                 }
             }
+        }
+
+        private static void SetExporterOptions(OtlpExporterOptions options)
+        {
+            // if running collector on the same box as CFE Endpoint below should be local host
+            // The default value of endpoint is http://localhost:4317.
+            //options.Endpoint = new Uri("http://0.0.0.0:4318");
+            options.Protocol = OtlpExportProtocol.Grpc;
         }
 
         private static void SetInstrumentationOptions(HttpWebRequestInstrumentationOptions options)

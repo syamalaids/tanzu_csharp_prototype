@@ -37,7 +37,10 @@ namespace Demo
                         catch (Exception ex)
                         {
                             childActivity.SetTag("otel.status_code", "ERROR");
-                            childActivity.SetTag("otel.status_description", "Something is broken");
+                            childActivity.SetTag("otel.status_description", ex.StackTrace);
+
+                            // Increment the counter by 1
+                            Program.WfMetrics.Measure.Counter.Increment(Program.MyExceptionCounter);
                         }
 
 
