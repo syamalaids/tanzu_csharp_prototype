@@ -17,6 +17,8 @@ using Wavefront.SDK.CSharp.Common.Application;
 using App.Metrics.Scheduling;
 using System.Threading.Tasks;
 using App.Metrics.Counter;
+using Wavefront.OpenTracing.SDK.CSharp.Reporting;
+using Wavefront.OpenTracing.SDK.CSharp;
 
 namespace Demo
 {
@@ -34,7 +36,9 @@ namespace Demo
         static void Main(string[] args)
         {
             //GenerateMetrics();
+            WavefrontTracer tracer = CreateWavefrontTracer(ApplicationName, ServiceName);
             GenerateTraces();
+            tracer.Close();
 
             Console.WriteLine("Press something to exit the program");
             Console.ReadLine();
@@ -52,6 +56,43 @@ namespace Demo
             ActivitySource.AddActivityListener(activityListener);
         }
 
+        private static WavefrontTracer CreateWavefrontTracer(string application, string service)
+        {
+          
+            // Step 1. Create ApplicationTags.
+            var appTags = new ApplicationTags.Builder(application, service).Build();
+
+            // Step 2. Create an IWavefrontSender instance for sending trace data via a Wavefront proxy.
+            //         Assume you have installed and started the proxy on <proxyHostname>.
+            IWavefrontSender wavefrontSender = new WavefrontProxyClient.Builder(ProxyHostName)
+                                                   .MetricsPort(2878)
+                                                   .TracingPort(30001)
+                                                   .DistributionPort(40000)
+                                                   .Build();
+
+            // Step 3. Create a WavefrontSpanReporter for reporting trace data that originates on <sourceName>.
+            IReporter wfSpanReporter = new WavefrontSpanReporter.Builder()
+                                       .WithSource("devisd006")
+                                       .Build(wavefrontSender);
+
+            //  To get the number of failures observed while reporting
+            int totalFailures = wfSpanReporter.GetFailureCount();
+
+            Console.WriteLine($"Failures from span reporter: {totalFailures}");
+
+            // Create a console reporter that reports span to console
+            IReporter consoleReporter = new ConsoleReporter("wavefront-tracing-example"); // Specify the same source you used for the WavefrontSpanReporter
+
+            // Instantiate a composite reporter composed of a console reporter and a WavefrontSpanReporter
+            IReporter compositeReporter = new CompositeReporter(wfSpanReporter, consoleReporter);
+
+            // Step 4. Create the WavefrontTracer.
+            return new WavefrontTracer.Builder(compositeReporter, appTags)
+                                      .WithGlobalTag("env", "Mayhem")
+                                      .Build();
+        }
+
+#if WaveFrontMetric
         private static void SetupWavefrontMetrics()
         {
             // Create a builder instance for App Metrics
@@ -101,7 +142,7 @@ namespace Demo
             // Increment the counter by n
             //metrics.Measure.Counter.Increment(MyExceptionCounter, 13);
         }
-
+#endif
 #if OTLPMetric
         private static void GenerateMetrics()
         {
@@ -137,12 +178,15 @@ namespace Demo
 #endif
         private static void GenerateTraces()
         {
+            var resourceList = new List<KeyValuePair<string, object>>();
+            resourceList.Add(new KeyValuePair<string, object>("application", ApplicationName));
 #if OTLPExporter
             TracerProvider tracerProvider = Sdk.CreateTracerProviderBuilder()
                                     .AddSource(ServiceName)
                                     .SetResourceBuilder(
                                             ResourceBuilder.CreateDefault()
-                                                .AddService(serviceName: ServiceName, serviceVersion: ServiceVersion))
+                                                .AddService(serviceName: ServiceName, serviceVersion: ServiceVersion)
+                                                .AddAttributes(resourceList))
                                     .AddHttpClientInstrumentation(SetInstrumentationOptions)
                                     .AddOtlpExporter(SetExporterOptions)
                                     .Build();
@@ -157,10 +201,7 @@ namespace Demo
                                     .Build();
 #endif
             SetupActivityListener();
-            SetupWavefrontMetrics();
 
-            // string proxyHost = "wavefront.proxy.hostname";
-            // int metricsPort = 2878;
             using (Activity myActivity = MyActivitySource.StartActivity("Activity Test", ActivityKind.Client))
             {
                 ActivityTest(10);

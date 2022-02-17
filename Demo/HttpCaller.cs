@@ -40,7 +40,7 @@ namespace Demo
                             childActivity.SetTag("otel.status_description", ex.StackTrace);
 
                             // Increment the counter by 1
-                            Program.WfMetrics.Measure.Counter.Increment(Program.MyExceptionCounter);
+                            // Program.WfMetrics.Measure.Counter.Increment(Program.MyExceptionCounter);
                         }
 
 
