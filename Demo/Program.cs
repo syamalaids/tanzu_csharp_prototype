@@ -1,4 +1,5 @@
 ﻿#define OTLPExporter
+#define WaveFrontMetric
 using OpenTelemetry;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Instrumentation.Http;
